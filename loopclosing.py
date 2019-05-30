@@ -1,3 +1,4 @@
+# Import libraries
 import numpy as np
 import cv2
 
@@ -14,9 +15,12 @@ from optimization import PoseGraphOptimization
 from components import Measurement
 
 
-
+# THREAD - LOOP CLOSURE
+# STEP - LOOP DETECTION
 # a very simple implementation
 class LoopDetection(object):
+
+# Get the points of the keyframe inside and outside the defined mapping window
     def __init__(self, params):
         self.params = params
         self.nns = NearestNeighbors()
@@ -25,6 +29,7 @@ class LoopDetection(object):
         embedding = keyframe.feature.descriptors.mean(axis=0)
         self.nns.add_item(embedding, keyframe)
 
+# Detect revisited places
     def detect(self, keyframe):
         embedding = keyframe.feature.descriptors.mean(axis=0)
         kfs, ds = self.nns.search(embedding, k=20)
@@ -34,6 +39,7 @@ class LoopDetection(object):
         if len(kfs) == 0:
             return None
 
+# Cross-check defined maximum distance of the points
         min_d = np.min(ds)
         for kf, d in zip(kfs, ds):
             if abs(kf.id - keyframe.id) < self.params.lc_min_inbetween_frames:
@@ -47,8 +53,10 @@ class LoopDetection(object):
         return None
 
 
-
+# THREAD - LOOP CLOSURE
 class LoopClosing(object):
+
+# Initialize the values and predefined parameters for the descriptors
     def __init__(self, system, params):
         self.system = system
         self.params = params
@@ -63,12 +71,14 @@ class LoopClosing(object):
         self.maintenance_thread = Thread(target=self.maintenance)
         self.maintenance_thread.start()
 
+# Stop loop closure when state stopped is set
     def stop(self):
         self.stopped = True
         self._queue.put(None)
         self.maintenance_thread.join()
         print('loop closing stopped')
 
+# Add keyframes in a queue
     def add_keyframe(self, keyframe):
         self._queue.put(keyframe)
         self.loop_detector.add_keyframe(keyframe)
@@ -78,6 +88,8 @@ class LoopClosing(object):
             self.add_keyframe(kf)
 
     def maintenance(self):
+        
+# Get queued keyframe
         last_query_keyframe = None
         while not self.stopped:
             keyframe = self._queue.get()
@@ -95,6 +107,7 @@ class LoopClosing(object):
                 abs(last_query_keyframe.id - keyframe.id) < 3):
                 continue
 
+# STEP - LOOP DETECTION: Create dictionary of keyframes described as bag-of-binary-words
             detected = self.loop_detector.detect(keyframe)
             if detected is None:
                 continue
@@ -225,8 +238,10 @@ class LoopClosing(object):
             last_query_keyframe = query_keyframe
         
 
-
+# THREAD - TRACKING
+# STEP - MATCHING
 def match_and_estimate(query_keyframe, match_keyframe, params):
+# Create keypoint query list
     query = defaultdict(list)
     for m in query_keyframe.measurements():
         if m.from_triangulation():
@@ -238,6 +253,7 @@ def match_and_estimate(query_keyframe, match_keyframe, params):
             n = len(query['matches'])
             query['matches'].append(cv2.DMatch(n, n, 0))
 
+# Create keypoint match list
     match = defaultdict(list)
     for m in match_keyframe.measurements():
         if m.from_triangulation():
@@ -266,6 +282,7 @@ def match_and_estimate(query_keyframe, match_keyframe, params):
         match['px'].append(match['kps1'][j].pt)
         match['pt'].append(match['measurements'][j].view)
 
+# Find a point in the correspondence of the 3D world and the 2D map
     # query_keyframe's pose in match_keyframe's coordinates frame
     T13, inliers13 = solve_pnp_ransac(
         query['pt'], match['px'], match_keyframe.cam.intrinsic)
@@ -276,11 +293,13 @@ def match_and_estimate(query_keyframe, match_keyframe, params):
     if T13 is None or T13 is None:
         return None
 
+# Calculate rotation and translation matrix
     delta = T31 * T13
     if (g2o.AngleAxis(delta.rotation()).angle() > 0.1 or
         np.linalg.norm(delta.translation()) > 0.5):          # 5.7° or 0.5m
         return None
 
+# STEP - LOOP CORRECTION for points inside the defined mapping window
     n_inliers = len(set(inliers13) & set(inliers31))
     query_pose = g2o.Isometry3d(
         query_keyframe.orientation, query_keyframe.position)
@@ -299,6 +318,7 @@ def match_and_estimate(query_keyframe, match_keyframe, params):
         match['measurements'], stereo_matches, n_matches, n_inliers)
 
 
+# Find a point in the correspondence of the 3D world and the 2D map
 def solve_pnp_ransac(pts3d, pts, intrinsic_matrix):
     val, rvec, tvec, inliers = cv2.solvePnPRansac(
             np.array(pts3d), np.array(pts), 
@@ -307,11 +327,13 @@ def solve_pnp_ransac(pts3d, pts, intrinsic_matrix):
     if inliers is None or len(inliers) < 5:
         return None, None
 
+# Convert rotation matrix
     T = g2o.Isometry3d(cv2.Rodrigues(rvec)[0], tvec)
     return T, inliers.ravel()
     
 
-
+# STEP - LOOP CORRECTION
+# Classification of points in the neighbourhood of the given frame 
 class NearestNeighbors(object):
     def __init__(self, dim=None):
         self.n = 0
