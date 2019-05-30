@@ -1,8 +1,9 @@
+# Import libraries
 import numpy as np
 import g2o
 
-
-
+# THREAD - LOCAL MAPPING
+# STEP - BUNDLE ADJUSTMENT: Minimize the reprojection error
 class BundleAdjustment(g2o.SparseOptimizer):
     def __init__(self, ):
         super().__init__()
@@ -22,6 +23,8 @@ class BundleAdjustment(g2o.SparseOptimizer):
         self.delta = np.sqrt(5.991)   
         self.aborted = False
 
+# THREAD - LOOP CLOSURE
+# Number of iterations        
     def optimize(self, max_iterations=10):
         super().initialize_optimization()
         super().optimize(max_iterations)
@@ -30,6 +33,7 @@ class BundleAdjustment(g2o.SparseOptimizer):
         finally:
             self.aborted = False
 
+# Add pose of robot regarding camera position
     def add_pose(self, pose_id, pose, cam, fixed=False):
         sbacam = g2o.SBACam(
             pose.orientation(), pose.position())
@@ -42,6 +46,7 @@ class BundleAdjustment(g2o.SparseOptimizer):
         v_se3.set_fixed(fixed)
         super().add_vertex(v_se3) 
 
+# Add point in the map
     def add_point(self, point_id, point, fixed=False, marginalized=True):
         v_p = g2o.VertexSBAPointXYZ()
         v_p.set_id(point_id * 2 + 1)
@@ -50,6 +55,7 @@ class BundleAdjustment(g2o.SparseOptimizer):
         v_p.set_fixed(fixed)
         super().add_vertex(v_p)
 
+# Add edges to analyze in the frame
     def add_edge(self, id, point_id, pose_id, meas):
         if meas.is_stereo():
             edge = self.stereo_edge(meas.xyx)
@@ -65,6 +71,7 @@ class BundleAdjustment(g2o.SparseOptimizer):
         edge.set_robust_kernel(kernel)
         super().add_edge(edge)
 
+# Set point to stereo camera projection
     def stereo_edge(self, projection, information=np.identity(3)):
         e = g2o.EdgeProjectP2SC()
         e.set_measurement(projection)
@@ -85,6 +92,7 @@ class BundleAdjustment(g2o.SparseOptimizer):
         e.set_information(information)
         return e
 
+# Get pose of the robot
     def get_pose(self, id):
         return self.vertex(id * 2).estimate()
 
@@ -95,8 +103,10 @@ class BundleAdjustment(g2o.SparseOptimizer):
         self.aborted = True
 
 
-
+# THREAD - LOOP CORRECTION
+# Use STEP - BUNDLE ADJUSTMENT: Calculate local adjustment, for local optimizations
 class LocalBA(object):
+# Set initial variables for the optimizer
     def __init__(self, ):
         self.optimizer = BundleAdjustment()
         self.measurements = []
@@ -106,21 +116,25 @@ class LocalBA(object):
         # threshold for confidence interval of 95%
         self.huber_threshold = 5.991
 
+# Set the keyframes that need to be optimized
     def set_data(self, adjust_keyframes, fixed_keyframes):
         self.clear()
         for kf in adjust_keyframes:
             self.optimizer.add_pose(kf.id, kf.pose, kf.cam, fixed=False)
             self.keyframes.append(kf)
 
+# Add the points in the keyframe
             for m in kf.measurements():
                 pt = m.mappoint
                 if pt not in self.mappoints:
                     self.optimizer.add_point(pt.id, pt.position)
                     self.mappoints.add(pt)
 
+# Add the edges in the keyframe
                 edge_id = len(self.measurements)
                 self.optimizer.add_edge(edge_id, pt.id, kf.id, m)
                 self.measurements.append(m)
+
 
         for kf in fixed_keyframes:
             self.optimizer.add_pose(kf.id, kf.pose, kf.cam, fixed=True)
@@ -130,16 +144,20 @@ class LocalBA(object):
                     self.optimizer.add_edge(edge_id, m.mappoint.id, kf.id, m)
                     self.measurements.append(m)
 
+# Update points
     def update_points(self):
         for mappoint in self.mappoints:
             mappoint.update_position(self.optimizer.get_point(mappoint.id))
 
+# Update poses
     def update_poses(self):
         for keyframe in self.keyframes:
             keyframe.update_pose(self.optimizer.get_pose(keyframe.id))
             keyframe.update_reference()
             keyframe.update_preceding()
 
+# For STEP - POSE REFINEMENT
+# Get bad measurements by using chi² and the huber function
     def get_bad_measurements(self):
         bad_measurements = []
         for edge in self.optimizer.active_edges():
@@ -147,21 +165,24 @@ class LocalBA(object):
                 bad_measurements.append(self.measurements[edge.id()])
         return bad_measurements
 
+# Clear variables for next loop iteration
     def clear(self):
         self.optimizer.clear()
         self.keyframes.clear()
         self.mappoints.clear()
         self.measurements.clear()
 
+# Close optimizer
     def abort(self):
         self.optimizer.abort()
 
+# Start optimizer with the given number of maximum interations
     def optimize(self, max_iterations):
         return self.optimizer.optimize(max_iterations)
 
 
 
-
+# Use Levenberg-Maquart minimization during pose graph optimization
 class PoseGraphOptimization(g2o.SparseOptimizer):
     def __init__(self):
         super().__init__()
@@ -169,10 +190,12 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
         solver = g2o.OptimizationAlgorithmLevenberg(solver)
         super().set_algorithm(solver)
 
+# Do optimization
     def optimize(self, max_iterations=20):
         super().initialize_optimization()
         super().optimize(max_iterations)
 
+# Add vector of the pose
     def add_vertex(self, id, pose, fixed=False):
         v_se3 = g2o.VertexSE3()
         v_se3.set_id(id)
@@ -180,6 +203,7 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
         v_se3.set_fixed(fixed)
         super().add_vertex(v_se3)
 
+# Calculate the egde between the vectors/vertex
     def add_edge(self, vertices, 
             measurement=None, 
             information=np.identity(6),
@@ -201,7 +225,7 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
             edge.set_robust_kernel(robust_kernel)
         super().add_edge(edge)
 
-
+# Set data of the keyframes
     def set_data(self, keyframes, loops):
         super().clear()
         anchor=None
@@ -235,6 +259,7 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
 
 
     def update_poses_and_points(
+# STEP - LOOP DETECTION
             self, keyframes, correction=None, exclude=set()):
 
         for kf in keyframes:
@@ -249,11 +274,13 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
             else:
                 corrected = uncorrected * correction
 
+# STEP - LOOP VALIDATION
             delta = uncorrected.inverse() * corrected
             if (g2o.AngleAxis(delta.rotation()).angle() < 0.02 and
                 np.linalg.norm(delta.translation()) < 0.03):          # 1°, 3cm
                 continue
 
+# STEP - LOOP CORRECTION
             for m in kf.measurements():
                 if m.from_triangulation():
                     old = m.mappoint.position
