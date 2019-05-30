@@ -1,3 +1,4 @@
+# Import libraries
 import numpy as np
 import cv2
 import os
@@ -9,7 +10,7 @@ from threading import Thread, Lock
 from multiprocessing import Process, Queue
 
 
-
+# PRESTEP: Read the image
 class ImageReader(object):
     def __init__(self, ids, timestamps, cam=None):
         self.ids = ids
@@ -24,6 +25,7 @@ class ImageReader(object):
         self.preload_thread = Thread(target=self.preload)
         self.thread_started = False
 
+# Read the current 3D image from the camera
     def read(self, path):
         img = cv2.imread(path, -1)
         if self.cam is None:
@@ -31,6 +33,7 @@ class ImageReader(object):
         else:
             return self.cam.rectify(img)
         
+# Store the images in cache, if not already done
     def preload(self):
         idx = self.idx
         t = float('inf')
@@ -78,7 +81,7 @@ class ImageReader(object):
 
 
 
-
+# Set parameters and specifications for KITTI dataset
 class KITTIOdometry(object):   # without lidar
     '''
     path example: 'path/to/your/KITTI odometry dataset/sequences/00'
@@ -119,9 +122,7 @@ class KITTIOdometry(object):   # without lidar
 
 
 
-
-
-
+# Set specifications for the cameras
 class Camera(object):
     def __init__(self, 
             width, height,
@@ -162,6 +163,7 @@ class Camera(object):
         else:
             return cv2.remap(img, *self.remap, cv2.INTER_LINEAR)
 
+# Set specifications for the stereo cameras
 class StereoCamera(object):
     def __init__(self, left_cam, right_cam):
         self.left_cam = left_cam
@@ -180,11 +182,13 @@ class StereoCamera(object):
         self.focal_baseline = self.fx * self.baseline
 
 
+# Set prarameters and camera specifications the EuRoC Dataset
 class EuRoCDataset(object):   # Stereo + IMU
     '''
     path example: 'path/to/your/EuRoC Mav dataset/MH_01_easy'
     '''
     def __init__(self, path, rectify=True):
+# Set specifications for left camera
         self.left_cam = Camera(
             width=752, height=480,
             intrinsic_matrix = np.array([
@@ -208,6 +212,8 @@ class EuRoCDataset(object):   # Stereo + IMU
                 [-0.0257744366974, 0.00375618835797, 0.999660727178, 0.00981073058949],
                 [0.0, 0.0, 0.0, 1.0]])
         )  
+
+# Set specifications for right camera
         self.right_cam = Camera(
             width=752, height=480,
             intrinsic_matrix = np.array([
@@ -233,6 +239,7 @@ class EuRoCDataset(object):   # Stereo + IMU
         ) 
         
         path = os.path.expanduser(path)
+# Read images from the cameras
         self.left = ImageReader(
             *self.list_imgs(os.path.join(path, 'mav0', 'cam0', 'data')), 
             self.left_cam)
