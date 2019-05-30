@@ -1,3 +1,4 @@
+# Import libraries
 import numpy as np
 import cv2
 import g2o
@@ -13,8 +14,7 @@ from covisibility import GraphMapPoint
 from covisibility import GraphMeasurement
 
 
-
-
+# Set specifications for camera
 class Camera(object):
     def __init__(self, fx, fy, cx, cy, width, height, 
             frustum_near, frustum_far, baseline):
@@ -29,18 +29,20 @@ class Camera(object):
             [0, fy, cy], 
             [0, 0, 1]])
 
+# Set pyramid area around the map window
         self.frustum_near = frustum_near
         self.frustum_far = frustum_far
 
         self.width = width
         self.height = height
         
+# PRESTEP - Pose prediction: Compute pose of the robot
     def compute_right_camera_pose(self, pose):
         pos = pose * np.array([self.baseline, 0, 0])
         return g2o.Isometry3d(pose.orientation(), pos)
 
 
-
+# Set specifications for the frame
 class Frame(object):
     def __init__(self, idx, pose, feature, cam, timestamp=None, 
             pose_covariance=np.identity(6)):
@@ -79,7 +81,8 @@ class Frame(object):
                 v >= - margin,
                 v <= self.cam.height + margin])
 
-        
+# THREAD - TRACKING
+# STEP - POSE REFINEMENT
     def update_pose(self, pose):
         if isinstance(pose, g2o.SE3Quat):
             self.pose = g2o.Isometry3d(pose.orientation(), pose.position())
@@ -154,6 +157,8 @@ class StereoFrame(Frame):
             right_feature, right_cam or cam, 
             timestamp, pose_covariance)
 
+# THREAD - TRACKING
+# STEP - MATCHING: Get features and measurements of the image items
     def find_matches(self, source, points, descriptors):
         
         q2 = Queue()
@@ -167,6 +172,8 @@ class StereoFrame(Frame):
         matches_right = q2.get()
 
         measurements = []
+
+# Matches for the left image
         for i, j in matches_left.items():
             if i in matches_right:
                 j2 = matches_right[i]
@@ -195,6 +202,7 @@ class StereoFrame(Frame):
                 measurements.append((i, meas))
                 self.left.set_matched(j)
 
+# Matches for the right image
         for i, j in matches_right.items():
             if i not in matches_left:
                 meas = Measurement(
@@ -207,6 +215,8 @@ class StereoFrame(Frame):
 
         return measurements
 
+# THREAD - TRACKING
+# STEP - MATCHING: Get correspondence of 2D map and 3D world features
     def match_mappoints(self, mappoints, source):
         points = []
         descriptors = []
@@ -221,6 +231,7 @@ class StereoFrame(Frame):
             measurements.append(meas)
         return measurements
 
+# STEP - MATCHING: If there is no correspondence, execute triangulation
     def triangulate(self):
         kps_left, desps_left, idx_left = self.left.get_unmatched_keypoints()
         kps_right, desps_right, idx_right = self.right.get_unmatched_keypoints()
@@ -244,6 +255,7 @@ class StereoFrame(Frame):
 
         return mappoints, measurements
 
+# STEP - MATCHING: Execute triangulation for the neighbour points
     def triangulate_points(self, kps_left, desps_left, kps_right, desps_right):
         matches = self.feature.row_match(
             kps_left, desps_left, kps_right, desps_right)
@@ -282,6 +294,7 @@ class StereoFrame(Frame):
 
         return mappoints, matchs
 
+# Update pose of the robot
     def update_pose(self, pose):
         super().update_pose(pose)
         self.right.update_pose(pose)
@@ -309,6 +322,7 @@ class StereoFrame(Frame):
 
         return np.logical_and(parallel, can_view)
 
+# Set features in keyframe
     def to_keyframe(self):
         return KeyFrame(
             self.idx, self.pose, 
@@ -317,11 +331,12 @@ class StereoFrame(Frame):
             self.pose_covariance)
 
 
-
+# Define specifications for the keyframe
 class KeyFrame(GraphKeyFrame, StereoFrame):
     _id = 0
     _id_lock = Lock()
 
+# Initialize the keyframe
     def __init__(self, *args, **kwargs):
         GraphKeyFrame.__init__(self)
         StereoFrame.__init__(self, *args, **kwargs)
@@ -338,12 +353,17 @@ class KeyFrame(GraphKeyFrame, StereoFrame):
         self.loop_constraint = None
         self.fixed = False
 
+
+# THREAD - TRACKING
+# STEP - KEYFRAME SELECTION
+# Update the reference of the keyframe
     def update_reference(self, reference=None):
         if reference is not None:
             self.reference_keyframe = reference
         self.reference_constraint = (
             self.reference_keyframe.pose.inverse() * self.pose)
 
+# When keyframe selected, also update the preceding
     def update_preceding(self, preceding=None):
         if preceding is not None:
             self.preceding_keyframe = preceding
@@ -361,7 +381,7 @@ class KeyFrame(GraphKeyFrame, StereoFrame):
         self.fixed = fixed
 
 
-
+# Define the appearance of map points
 class MapPoint(GraphMapPoint):
     _id = 0
     _id_lock = Lock()
@@ -417,7 +437,7 @@ class MapPoint(GraphMapPoint):
             self.count['meas'] += 1
 
     
-
+# Set measurement
 class Measurement(GraphMeasurement):
     
     Source = Enum('Measurement.Source', ['TRIANGULATION', 'TRACKING', 'REFIND'])
