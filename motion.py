@@ -1,9 +1,11 @@
+# Import libraries
 import numpy as np 
 import g2o
 
 
 
 class MotionModel(object):
+# Initialization of the model
     def __init__(self, 
             timestamp=None, 
             initial_position=np.zeros(3), 
@@ -23,6 +25,7 @@ class MotionModel(object):
         # damping factor
         self.damp = 0.95
 
+# Set current camera pose
     def current_pose(self):
         '''
         Get the current camera pose.
@@ -30,6 +33,7 @@ class MotionModel(object):
         return (g2o.Isometry3d(self.orientation, self.position), 
             self.covariance)
 
+# STEP- POSE PREDICTION
     def predict_pose(self, timestamp):
         '''
         Predict the next camera pose.
@@ -40,6 +44,7 @@ class MotionModel(object):
         
         dt = timestamp - self.timestamp
 
+# Use quaternion instead of rotation matrix due to performance
         delta_angle = g2o.AngleAxis(
             self.v_angular_angle * dt * self.damp, 
             self.v_angular_axis)
@@ -50,6 +55,8 @@ class MotionModel(object):
 
         return (g2o.Isometry3d(orientation, position), self.covariance)
 
+# THREAD - TRACKING
+# STEP - POSE REFINEMENT
     def update_pose(self, timestamp, 
             new_position, new_orientation, new_covariance=None):
         '''
@@ -82,6 +89,8 @@ class MotionModel(object):
         self.covariance = new_covariance
         self.initialized = True
 
+# THREAD - LOOP CLOSING
+# STEP - LOOP CORRECTION
     def apply_correction(self, correction):     # corr: g2o.Isometry3d or matrix44
         '''
         Reset the model given a new camera pose.
