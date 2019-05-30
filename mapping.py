@@ -1,3 +1,4 @@
+# Import libraries
 import numpy as np
 
 from queue import Queue
@@ -11,7 +12,7 @@ from optimization import LocalBA
 from components import Measurement
 
 
-
+# THREAD - LOCAL MAPPING
 class Mapping(object):
     def __init__(self, graph, params):
         self.graph = graph
@@ -20,6 +21,7 @@ class Mapping(object):
 
         self.optimizer = LocalBA()
 
+# Get local keyframe created by THREAD - TRACKING
     def add_keyframe(self, keyframe, measurements):
         self.graph.add_keyframe(keyframe)
         self.create_points(keyframe)
@@ -47,6 +49,8 @@ class Mapping(object):
                 if len(keyframes) >= self.params.local_window_size:
                     return
 
+# THREAD - TRACKING
+# STEP - KEYFRAME SELECTION
     def create_points(self, keyframe):
         mappoints, measurements = keyframe.triangulate()
         self.add_measurements(keyframe, mappoints, measurements)
@@ -57,6 +61,7 @@ class Mapping(object):
             self.graph.add_measurement(keyframe, mappoint, measurement)
             mappoint.increase_measurement_count()
 
+# STEP - BUNDLE ADJUSTMENT
     def bundle_adjust(self, keyframes):
         adjust_keyframes = set()
         for kf in keyframes:
@@ -70,6 +75,7 @@ class Mapping(object):
                     and self.is_safe(ck) and ck < kf):
                     fixed_keyframes.add(ck)
 
+# TREAD - LOOP CLOSURE: Correct the map points
         self.optimizer.set_data(adjust_keyframes, fixed_keyframes)
         completed = self.optimizer.optimize(self.params.ba_max_iterations)
 
@@ -80,9 +86,11 @@ class Mapping(object):
             self.remove_measurements(self.optimizer.get_bad_measurements())
         return completed
 
+# Set status saved
     def is_safe(self, keyframe):
         return True
 
+# Save the points in the keyframe
     def get_owned_points(self, keyframe):
         owned = []
         for m in keyframe.measurements():
@@ -90,6 +98,7 @@ class Mapping(object):
                 owned.append(m.mappoint)
         return owned
 
+# Estimate points without correspondence in the map
     def filter_unmatched_points(self, keyframe, mappoints):
         filtered = []
         for i in np.where(keyframe.can_view(mappoints))[0]:
@@ -99,6 +108,8 @@ class Mapping(object):
                 filtered.append(pt)
         return filtered
 
+# STEP - FIND NEW MEASUREMENTS
+# Refinement of the camera pose (keyframe map) and the 3D pose (point cloud map)
     def refind(self, keyframes, new_mappoints):    # time consuming
         if len(new_mappoints) == 0:
             return
@@ -115,11 +126,13 @@ class Mapping(object):
                 self.graph.add_measurement(keyframe, m.mappoint, m)
                 m.mappoint.increase_measurement_count()
 
+# Minimize double summation of keyframe map and point cloud map
     def remove_measurements(self, measurements):
         for m in measurements:
             m.mappoint.increase_outlier_count()
             self.graph.remove_measurement(m)
 
+# STEP - REMOVE BAD POINTS
     def points_culling(self, keyframes):    # Remove bad mappoints
         mappoints = set(chain(*[kf.mappoints() for kf in keyframes]))
         for pt in mappoints:
@@ -128,8 +141,10 @@ class Mapping(object):
 
 
 
-
+# THREAD - LOCAL MAPPING
 class MappingThread(Mapping):
+
+# Initialize environment, set window locked to proceed mapping
     def __init__(self, graph, params):
         super().__init__(graph, params)
 
@@ -144,6 +159,7 @@ class MappingThread(Mapping):
         self.maintenance_thread = Thread(target=self.maintenance)
         self.maintenance_thread.start()
 
+# Add a keyframe to the queue for processing
     def add_keyframe(self, keyframe, measurements): 
         self.graph.add_keyframe(keyframe)
 
@@ -156,6 +172,7 @@ class MappingThread(Mapping):
             self._requests_cv.notify()
         
     def maintenance(self):
+# Set execution of the thread if there are more than 5 keyframes
         stopped = False
         while not stopped:
             while not self._queue.empty():
@@ -191,6 +208,7 @@ class MappingThread(Mapping):
 
             self.status['processing'] = True
 
+# STEP - FIND NEW MEASUREMENTS
             if requests[1] and len(self.local_keyframes) > 0:
                 self.fill(self.local_keyframes, self.local_keyframes[-1])
 
@@ -203,14 +221,17 @@ class MappingThread(Mapping):
                                 self.locked_window.add(ck)
                     self.status['window_locked'] = True
 
+# STEP - BUNDLE ADJUSTMENT
             if requests[1] and len(self.local_keyframes) > 0:
                 completed = self.bundle_adjust(self.local_keyframes)
                 if completed:
+# STEP - REMOVE BAD POINTS
                     self.points_culling(self.local_keyframes)
                 self.local_keyframes.clear()
 
             self.status['processing'] = False
 
+# Stop queue during processing
     def stop(self):
         with self._requests_cv:
             self._requests_cv.notify()
@@ -221,13 +242,16 @@ class MappingThread(Mapping):
         self.maintenance_thread.join()
         print('mapping stopped')
 
+# Save the new keyframe, when window is not locked
     def is_safe(self, keyframe):
         with self._lock:
             return not self.is_window_locked() or keyframe in self.locked_window
 
+# Set status processing
     def is_processing(self):
         return self.status['processing']
 
+# While processing lock window
     def lock_window(self):
         with self._lock:
             self.status['window_locked'] = False
@@ -241,17 +265,21 @@ class MappingThread(Mapping):
             time.sleep(1e-4)
         return self.locked_window
 
+# Free window after finishing
     def free_window(self):
         with self._lock:
             self.status['window_locked'] = False
             self.locked_window.clear()
 
+# Ask for status, if window is locked
     def is_window_locked(self):
         return self.status['window_locked']
 
+# Ask for status of the queue
     def wait_until_empty_queue(self):
         while not self._queue.empty():
             time.sleep(1e-4)
 
+# Stop optimization of the bundle adjustment
     def interrupt_ba(self):
         self.optimizer.abort()
