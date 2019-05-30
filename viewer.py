@@ -1,3 +1,4 @@
+# Import libraries
 import numpy as np
 import cv2
 
@@ -8,7 +9,7 @@ import time
 from multiprocessing import Process, Queue
 
 
-
+# Create dynamic array to process the points of the map
 class DynamicArray(object):
     def __init__(self, shape=3):
         if isinstance(shape, int):
@@ -57,7 +58,7 @@ class DynamicArray(object):
 
 
 
-
+# Define the map
 class MapViewer(object):
     def __init__(self, system=None, config=None):
         self.system = system
@@ -65,6 +66,8 @@ class MapViewer(object):
 
         self.saved_keyframes = set()
 
+# Define a queue for the keyframes used by
+# STEP - KEYFRAME SELECTION and THREAD - LOOP CLOSURE 
         # data queue
         self.q_pose = Queue()
         self.q_active = Queue()
@@ -81,10 +84,14 @@ class MapViewer(object):
         self.view_thread = Process(target=self.view)
         self.view_thread.start()
 
+# THREAD - LOOP CLOSURE
+# STEP - LOOP CORRECTION
+# Tracking thread must remain operational, therefore work with map points and create new keyframes
     def update(self, refresh=False):
         while not self.q_refresh.empty():
             refresh = self.q_refresh.get()
 
+# Create a copy and update corrected keyframes and map points
         self.q_image.put(self.system.current.image)
         self.q_pose.put(self.system.current.pose.matrix())
 
@@ -94,6 +101,7 @@ class MapViewer(object):
                 points.append(m.mappoint.position) 
         self.q_active.put(points)
 
+# Update outside and inside of the defined mapping window
         lines = []
         for kf in self.system.graph.keyframes():
             if kf.reference_keyframe is not None:
@@ -139,7 +147,7 @@ class MapViewer(object):
                 self.q_points.put((points, 1))
                 self.q_colors.put((colors, 1))
 
-
+# Stop viewer
     def stop(self):
         self.update(refresh=True)
         self.view_thread.join()
@@ -151,7 +159,7 @@ class MapViewer(object):
                     _ = x.get()
         print('viewer stopped')
 
-
+# Set up view of map points, graph, image and cameras with pangolin
     def view(self):
         pangolin.CreateWindowAndBind('Viewer', 1024, 768)
 
