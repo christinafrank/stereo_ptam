@@ -1,10 +1,11 @@
+# Import libraries
 from threading import Lock
 
 from collections import defaultdict, Counter
 from itertools import chain
 
 
-
+# Settings for covisibility of 3D map and the keypoints
 class GraphKeyFrame(object):
     def __init__(self):
         self.id = None
