@@ -1,3 +1,4 @@
+# Import libraries
 import numpy as np
 import cv2
 
@@ -8,7 +9,7 @@ from threading import Thread, Lock
 from queue import Queue
 
 
-
+# PRESTEP: DETECT IMAGE FEATURES
 class ImageFeature(object):
     def __init__(self, image, params):
         # TODO: pyramid representation
@@ -18,17 +19,22 @@ class ImageFeature(object):
         self.keypoints = []      # list of cv2.KeyPoint
         self.descriptors = []    # numpy.ndarray
 
+# Set detector as predefined in params
         self.detector = params.feature_detector
         self.extractor = params.descriptor_extractor
         self.matcher = params.descriptor_matcher
 
+# Define cell size for feature detection with spartial hashing in grid cells
         self.cell_size = params.matching_cell_size
+# Get predefined distance of the points
         self.distance = params.matching_distance
+# Get number of neighbours to analyze
         self.neighborhood = (
             params.matching_cell_size * params.matching_neighborhood)
 
         self._lock = Lock()
 
+# Extract keypoints from the map window
     def extract(self):
         self.keypoints = self.detector.detect(self.image)
         self.keypoints, self.descriptors = self.extractor.compute(
@@ -36,6 +42,7 @@ class ImageFeature(object):
 
         self.unmatched = np.ones(len(self.keypoints), dtype=bool)
 
+# Use cv2 to draw the keypoints into the 3D world
     def draw_keypoints(self, name='keypoints', delay=1):
         if self.image.ndim == 2:
             image = np.repeat(self.image[..., np.newaxis], 3, axis=2)
@@ -44,6 +51,7 @@ class ImageFeature(object):
         img = cv2.drawKeypoints(image, self.keypoints, None, flags=0)
         cv2.imshow(name, img);cv2.waitKey(delay)
 
+# Find matches within the predefined distance
     def find_matches(self, predictions, descriptors):
         matches = dict()
         distances = defaultdict(lambda: float('inf'))
@@ -63,6 +71,7 @@ class ImageFeature(object):
         matches = [(i, j) for j, i in matches.items()]
         return matches
 
+# Define descriptor to match keypoints
     def matched_by(self, descriptors):
         with self._lock:
             unmatched_descriptors = self.descriptors[self.unmatched]
@@ -77,17 +86,23 @@ class ImageFeature(object):
             np.array(descriptors), unmatched_descriptors)
         return [(m, m.queryIdx, m.trainIdx) for m in matches]
 
+# Find matches within the same row as the keypoint
     def row_match(self, *args, **kwargs):
         return row_match(self.matcher, *args, **kwargs)
 
+# Find matches around the keypoint
     def circular_stereo_match(self, *args, **kwargs):
         return circular_stereo_match(self.matcher, *args, **kwargs)
 
+# Get the keypoint
     def get_keypoint(self, i):
         return self.keypoints[i]
+
+# Get the descriptor
     def get_descriptor(self, i):
         return self.descriptors[i]
 
+# Get the colour of the keypoint
     def get_color(self, pt):
         x = int(np.clip(pt[0], 0, self.width-1))
         y = int(np.clip(pt[1], 0, self.height-1))
@@ -96,10 +111,12 @@ class ImageFeature(object):
             color = np.array([color, color, color])
         return color[::-1] / 255.
 
+# Set status matched for the keypoint
     def set_matched(self, i):
         with self._lock:
             self.unmatched[i] = False
 
+# Get unmatched keypoints
     def get_unmatched_keypoints(self):
         keypoints = []
         descriptors = []
@@ -112,10 +129,9 @@ class ImageFeature(object):
                 indices.append(i)
 
         return keypoints, descriptors, indices
+    
 
-
-
-# TODO: only match points in neighboring rows
+# Only match points in neighboring rows
 def row_match(matcher, kps1, desps1, kps2, desps2,
         matching_distance=40, 
         max_row_distance=2.5, 
@@ -133,7 +149,7 @@ def row_match(matcher, kps1, desps1, kps2, desps2,
     return good
     
 
-
+# Get neighbours of the current point
 def circular_stereo_match(
         matcher, 
         desps1, desps2, matches12,
