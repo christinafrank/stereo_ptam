@@ -157,7 +157,7 @@ class LocalBA(object):
             keyframe.update_preceding()
 
 # For STEP - POSE REFINEMENT
-# Get bad measurements by using chi² and the huber function
+# Get bad measurements by using chi quadrat and the huber function
     def get_bad_measurements(self):
         bad_measurements = []
         for edge in self.optimizer.active_edges():
@@ -229,7 +229,7 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
     def set_data(self, keyframes, loops):
         super().clear()
         anchor=None
-        for kf, *_ in loops:
+        for kf in loops:
             if anchor is None or kf < anchor:
                 anchor = kf
 
@@ -277,7 +277,7 @@ class PoseGraphOptimization(g2o.SparseOptimizer):
 # STEP - LOOP VALIDATION
             delta = uncorrected.inverse() * corrected
             if (g2o.AngleAxis(delta.rotation()).angle() < 0.02 and
-                np.linalg.norm(delta.translation()) < 0.03):          # 1°, 3cm
+                np.linalg.norm(delta.translation()) < 0.03):          # 1 degree, 3cm
                 continue
 
 # STEP - LOOP CORRECTION
